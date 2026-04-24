@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>家庭晚间任务面板</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #1a1a2e;
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── State Debug Panel ── */
+  .debug-panel {
+    position: fixed;
+    top: 8px; right: 12px;
+    z-index: 999;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    max-width: 220px;
+    justify-content: flex-end;
+  }
+  .debug-btn {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 8px;
+    color: #ccc;
+    font-size: 11px;
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .debug-btn:hover { background: rgba(255,255,255,0.22); }
+  .debug-btn.active { background: #4CAF50; color: #fff; border-color: #4CAF50; }
+
+  /* ── Main Layout ── */
+  .app {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    padding: 16px;
+    max-width: 900px;
+    margin: 0 auto;
+    width: 100%;
+    gap: 16px;
+  }
+
+  /* ── Child Switcher ── */
+  .child-switcher {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .child-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255,255,255,0.06);
+    border: 2px solid transparent;
+    border-radius: 16px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-width: 72px;
+  }
+  .child-btn:active { transform: scale(0.95); }
+  .child-btn.selected {
+    border-color: var(--child-color);
+    background: rgba(255,255,255,0.1);
+    box-shadow: 0 0 12px var(--child-color-dim);
+  }
+  .child-avatar {
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+    border: 3px solid var(--child-color);
+    background: var(--child-color-dim);
+    transition: box-shadow 0.2s;
+  }
+  .child-btn.selected .child-avatar {
+    box-shadow: 0 0 16px var(--child-color);
+  }
+  .child-name {
+    font-size: 12px;
+    color: #ccc;
+    font-weight: 500;
+  }
+  .child-btn.selected .child-name { color: #fff; }
+
+  /* ── Time Window Bar ── */
+  .time-window {
+    background: rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 12px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .time-window-label {
+    font-size: 13px;
+    color: #aaa;
+  }
+  .time-window-range {
+    font-size: 15px;
+    font-weight: 600;
+    color: #ddd;
+  }
+  .time-window-countdown {
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: -0.5px;
+  }
+  .time-window-countdown.urgent { color: #FF7043; }
+  .time-window-countdown.overtime { color: #FF5722; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+  /* ── Main Time Bar ── */
+  .timebar-section { display: flex; flex-direction: column; gap: 6px; }
+  .timebar-labels {
+    display: flex;
+    font-size: 11px;
+    color: #777;
+    gap: 4px;
+  }
+  .timebar-label-seg { display: flex; align-items: center; gap: 4px; }
+  .timebar-label-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+  }
+  .timebar-track {
+    height: 28px;
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex;
+    position: relative;
+    background: rgba(255,255,255,0.1);
+  }
+  .timebar-seg {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.85);
+    transition: width 0.5s ease;
+    position: relative;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .timebar-seg.consumed { background: #555; }
+  .timebar-seg.current {
+    background: var(--child-color);
+    animation: breathe 2s ease-in-out infinite;
+    box-shadow: 0 0 10px var(--child-color-dim);
+  }
+  .timebar-seg.remaining { background: rgba(255,255,255,0.18); }
+  .timebar-seg.freetime {
+    background: #00E5FF;
+    box-shadow: 0 0 16px #00E5FFaa;
+    color: #003040;
+  }
+  .timebar-seg.overtime {
+    background: #FF5722;
+    animation: pulse 1s infinite;
+  }
+  @keyframes breathe {
+    0%,100% { filter: brightness(1); }
+    50% { filter: brightness(1.2); }
+  }
+  .timebar-free-sparkles {
+    position: absolute;
+    right: 4px; top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px;
+    animation: sparkle 1.5s ease-in-out infinite;
+  }
+  @keyframes sparkle {
+    0%,100% { opacity: 1; transform: translateY(-50%) scale(1); }
+    50% { opacity: 0.5; transform: translateY(-50%) scale(0.8); }
+  }
+
+  /* ── Current Task Card ── */
+  .current-task-card {
+    background: linear-gradient(135deg, var(--child-color-dim) 0%, var(--child-color-light) 100%);
+    border-radius: 16px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border: 2px solid var(--child-color);
+    box-shadow: 0 4px 20px var(--child-color-dim);
+    position: relative;
+    overflow: hidden;
+  }
+  .current-task-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    background: var(--child-color);
+    border-radius: 4px 0 0 4px;
+  }
+  .current-task-arrow {
+    font-size: 22px;
+    animation: arrowBreathe 2s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+  @keyframes arrowBreathe {
+    0%,100% { transform: translateX(0); opacity: 1; }
+    50% { transform: translateX(4px); opacity: 0.7; }
+  }
+  .current-task-info { flex: 1; }
+  .current-task-label {
+    font-size: 12px;
+    color: rgba(255,255,255,0.7);
+    margin-bottom: 2px;
+  }
+  .current-task-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+  }
+  .current-task-meta {
+    font-size: 12px;
+    color: rgba(255,255,255,0.65);
+    margin-top: 2px;
+  }
+  .current-task-done-btn {
+    background: rgba(255,255,255,0.2);
+    border: 2px solid rgba(255,255,255,0.5);
+    border-radius: 50%;
+    width: 54px; height: 54px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.2s;
+  }
+  .current-task-done-btn:active { transform: scale(0.9); background: rgba(255,255,255,0.35); }
+  .current-task-card.waiting {
+    border-color: rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.06);
+    box-shadow: none;
+  }
+  .current-task-card.waiting::before { background: rgba(255,255,255,0.3); }
+  .current-task-card.waiting .current-task-arrow { display: none; }
+
+  /* ── Task Grid ── */
+  .task-grid-label {
+    font-size: 12px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  .task-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 10px;
+  }
+  .task-card {
+    background: rgba(255,255,255,0.07);
+    border: 2px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .task-card.done {
+    opacity: 0.4;
+    border-color: rgba(255,255,255,0.08);
+  }
+  .task-card.done .task-name { text-decoration: line-through; }
+  .task-card.urgent {
+    border-color: #FF7043;
+    animation: urgentGlow 2s ease-in-out infinite;
+    transform: scale(1.04);
+  }
+  @keyframes urgentGlow {
+    0%,100% { box-shadow: 0 0 6px rgba(255,112,67,0.4); }
+    50% { box-shadow: 0 0 14px rgba(255,112,67,0.7); }
+  }
+  .task-card.next-up {
+    border: 2px dashed rgba(255,255,255,0.3);
+    opacity: 0.7;
+  }
+  .task-icon { font-size: 28px; }
+  .task-name { font-size: 13px; font-weight: 600; color: #eee; text-align: center; }
+  .task-duration { font-size: 11px; color: #888; }
+  .task-check {
+    position: absolute;
+    top: 6px; right: 8px;
+    font-size: 14px;
+    opacity: 0;
+  }
+  .task-card.done .task-check { opacity: 1; }
+  .task-status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #888;
+    position: absolute;
+    bottom: 8px; right: 8px;
+  }
+  .task-card.current .task-status-dot { background: var(--child-color); box-shadow: 0 0 6px var(--child-color); }
+
+  /* ── Free Time ── */
+  .freetime-panel {
+    background: linear-gradient(135deg, rgba(0,229,255,0.15) 0%, rgba(0,229,255,0.05) 100%);
+    border: 2px solid rgba(0,229,255,0.35);
+    border-radius: 16px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 0 24px rgba(0,229,255,0.2);
+  }
+  .freetime-panel.hidden { display: none; }
+  .freetime-icon { font-size: 28px; }
+  .freetime-text { flex: 1; }
+  .freetime-label { font-size: 13px; color: #00E5FF; font-weight: 600; }
+  .freetime-duration { font-size: 20px; font-weight: 700; color: #00E5FF; }
+  .freetime-hint { font-size: 11px; color: rgba(0,229,255,0.6); margin-top: 2px; }
+
+  /* ── Overtime Panel ── */
+  .overtime-panel {
+    background: linear-gradient(135deg, rgba(255,87,34,0.2) 0%, rgba(255,87,34,0.08) 100%);
+    border: 2px solid rgba(255,87,34,0.4);
+    border-radius: 16px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .overtime-panel.hidden { display: none; }
+  .overtime-icon { font-size: 28px; }
+  .overtime-text { flex: 1; }
+  .overtime-label { font-size: 13px; color: #FF7043; font-weight: 600; }
+  .overtime-info { font-size: 14px; color: #ccc; margin-top: 2px; }
+
+  /* ── Waiting (before start) ── */
+  .waiting-panel {
+    background: rgba(255,255,255,0.06);
+    border-radius: 16px;
+    padding: 20px 18px;
+    text-align: center;
+  }
+  .waiting-panel.hidden { display: none; }
+  .waiting-icon { font-size: 40px; margin-bottom: 10px; }
+  .waiting-title { font-size: 16px; font-weight: 600; color: #ccc; margin-bottom: 6px; }
+  .waiting-hint { font-size: 13px; color: #777; }
+  .waiting-preview {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 14px;
+  }
+  .waiting-task-chip {
+    background: rgba(255,255,255,0.08);
+    border-radius: 20px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #aaa;
+    display: flex; align-items: center; gap: 4px;
+  }
+
+  /* ── Bottom spacer ── */
+  .spacer { height: 20px; }
+
+  /* ── Responsive ── */
+  @media (max-width: 600px) {
+    .app { padding: 12px; gap: 12px; }
+    .child-btn { min-width: 64px; padding: 6px 8px; }
+    .child-avatar { width: 44px; height: 44px; font-size: 20px; }
+    .task-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
+    .current-task-card { padding: 10px 14px; }
+    .current-task-name { font-size: 16px; }
+  }
+
+  @media (min-width: 768px) {
+    body { align-items: center; justify-content: center; }
+    .app { max-width: 760px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- State Debug Buttons -->
+<div class="debug-panel">
+  <button class="debug-btn active" onclick="setState('before')">⏳ 开始前</button>
+  <button class="debug-btn" onclick="setState('active')">▶️ 进行中</button>
+  <button class="debug-btn" onclick="setState('overtime')">⏰ 超时</button>
+</div>
+
+<div class="app" id="app"></div>
+
+<script>
+// ── Child Data ──
+const children = [
+  { id: 'xm', name: '小明', color: '#4CAF50', colorDim: 'rgba(76,175,80,0.25)', colorLight: 'rgba(76,175,80,0.18)', emoji: '🟢' },
+  { id: 'xh', name: '小红', color: '#FF9800', colorDim: 'rgba(255,152,0,0.25)',   colorLight: 'rgba(255,152,0,0.18)',  emoji: '🟡' },
+  { id: 'xh2', name: '小华', color: '#2196F3', colorDim: 'rgba(33,150,243,0.25)', colorLight: 'rgba(33,150,243,0.18)', emoji: '🔵' },
+  { id: 'xl', name: '小丽', color: '#9C27B0', colorDim: 'rgba(156,39,176,0.25)', colorLight: 'rgba(156,39,176,0.18)', emoji: '🟣' }
+];
+
+// ── Task Data per Child ──
+const taskData = {
+  xm: [
+    { name: '洗澡', icon: '🛁', duration: 25, status: 'done' },
+    { name: '吃饭', icon: '🍚', duration: 30, status: 'current' },
+    { name: '作业', icon: '📝', duration: 45, status: 'pending' },
+    { name: '运动', icon: '⚽', duration: 20, status: 'pending' },
+    { name: '自由时间', icon: '🎮', duration: 0, status: 'freetime' }
+  ],
+  xh: [
+    { name: '洗澡', icon: '🛁', duration: 30, status: 'current' },
+    { name: '吃饭', icon: '🍚', duration: 25, status: 'pending' },
+    { name: '作业', icon: '📝', duration: 40, status: 'pending' },
+    { name: '自由时间', icon: '🎮', duration: 0, status: 'freetime' }
+  ],
+  xh2: [
+    { name: '吃饭', icon: '🍚', duration: 30, status: 'done' },
+    { name: '洗澡', icon: '🛁', duration: 25, status: 'done' },
+    { name: '作业', icon: '📝', duration: 50, status: 'current' },
+    { name: '运动', icon: '🏀', duration: 20, status: 'pending' },
+    { name: '自由时间', icon: '🎮', duration: 0, status: 'freetime' }
+  ],
+  xl: [
+    { name: '洗澡', icon: '🛁', duration: 30, status: 'current' },
+    { name: '吃饭', icon: '🍚', duration: 30, status: 'pending' },
+    { name: '阅读', icon: '📚', duration: 20, status: 'pending' },
+    { name: '自由时间', icon: '🎮', duration: 0, status: 'freetime' }
+  ]
+};
+
+// ── State ──
+let currentChildId = 'xm';
+let appState = 'before'; // 'before' | 'active' | 'overtime'
+
+// ── Time helpers ──
+// Window: 5:30 PM → 8:30 PM = 3 hours = 180 min
+const WIN_START = 17 * 60 + 30; // 17:30
+const WIN_END   = 20 * 60 + 30; // 20:30
+const WIN_TOTAL = WIN_END - WIN_START; // 180 min
+
+function minsToHHMM(mins) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${h}:${String(m).padStart(2, '0')}`;
+}
+
+// ── Render ──
+function render() {
+  const child = children.find(c => c.id === currentChildId);
+  const tasks = taskData[currentChildId];
+  document.documentElement.style.setProperty('--child-color', child.color);
+  document.documentElement.style.setProperty('--child-color-dim', child.colorDim);
+  document.documentElement.style.setProperty('--child-color-light', child.colorLight);
+
+  const remaining = getRemainingMinutes();
+  const elapsed = WIN_TOTAL - remaining;
+  const freetimeMins = getFreetimeMinutes();
+  const overtimeMins = appState === 'overtime' ? Math.abs(remaining) : 0;
+
+  let html = '';
+
+  // ── Child Switcher ──
+  html += `<div class="child-switcher">`;
+  children.forEach(c => {
+    const sel = c.id === currentChildId ? 'selected' : '';
+    html += `<button class="child-btn ${sel}" style="--child-color:${c.color};--child-color-dim:${c.colorDim}" onclick="switchChild('${c.id}')">
+      <div class="child-avatar">${c.emoji}</div>
+      <span class="child-name">${c.name}</span>
+    </button>`;
+  });
+  html += `</div>`;
+
+  // ── Before Start ──
+  if (appState === 'before') {
+    const minsUntil = WIN_START - (new Date().getHours() * 60 + new Date().getMinutes());
+    html += `<div class="waiting-panel">
+      <div class="waiting-icon">🌙</div>
+      <div class="waiting-title">今晚安排将于 5:30 开始</div>
+      <div class="waiting-hint">还有 ${minsUntil > 0 ? minsUntil + ' 分钟' : '—'}</div>
+      <div class="waiting-preview">`;
+    tasks.filter(t => t.status !== 'freetime').forEach(t => {
+      html += `<div class="waiting-task-chip">${t.icon} ${t.name}</div>`;
+    });
+    html += `</div></div>`;
+  }
+
+  // ── Time Window Bar ──
+  html += `<div class="time-window">
+    <div>
+      <div class="time-window-label">今晚</div>
+      <div class="time-window-range">5:30 – 8:30</div>
+    </div>
+    <div class="time-window-countdown ${appState === 'overtime' ? 'overtime' : remaining < 30 ? 'urgent' : ''}">
+      ${appState === 'before' ? '等待开始' : appState === 'overtime' ? '已超出 ' + overtimeMins + 'min' : '剩余 ' + minsToHHMM(remaining)}
+    </div>
+  </div>`;
+
+  // ── Main Time Bar ──
+  if (appState !== 'before') {
+    const currentTask = tasks.find(t => t.status === 'current');
+    const currentDur = currentTask ? currentTask.duration : 0;
+    const doneTasks = tasks.filter(t => t.status === 'done');
+    const doneDur = doneTasks.reduce((s, t) => s + t.duration, 0);
+    const pendingTasks = tasks.filter(t => t.status === 'pending');
+    const pendingDur = pendingTasks.reduce((s, t) => s + t.duration, 0);
+
+    // Widths as percentage
+    const pElapsed  = Math.min(100, Math.max(0, (elapsed / WIN_TOTAL) * 100));
+    const pCurrent  = currentDur > 0 ? (currentDur / WIN_TOTAL) * 100 : 0;
+    const pFreetime = freetimeMins > 0 ? (freetimeMins / WIN_TOTAL) * 100 : 0;
+    const pPending  = Math.max(0, 100 - pElapsed - pCurrent - pFreetime);
+    const pOvertime = appState === 'overtime' ? Math.min(20, (overtimeMins / WIN_TOTAL) * 100) : 0;
+
+    html += `<div class="timebar-section">
+      <div class="timebar-labels">
+        <div class="timebar-label-seg"><div class="timebar-label-dot" style="background:#555"></div>已消耗</div>
+        <div class="timebar-label-seg"><div class="timebar-label-dot" style="background:${child.color}"></div>当前任务</div>
+        <div class="timebar-label-seg"><div class="timebar-label-dot" style="background:rgba(255,255,255,0.18)"></div>未完成</div>
+        ${pFreetime > 0 ? '<div class="timebar-label-seg"><div class="timebar-label-dot" style="background:#00E5FF"></div>自由时间</div>' : ''}
+        ${pOvertime > 0 ? '<div class="timebar-label-seg"><div class="timebar-label-dot" style="background:#FF5722"></div>超时</div>' : ''}
+      </div>
+      <div class="timebar-track">`;
+
+    // consumed
+    if (pElapsed > 0) {
+      html += `<div class="timebar-seg consumed" style="width:${pElapsed}%">${pElapsed > 8 ? '已消耗' : ''}</div>`;
+    }
+    // current
+    if (pCurrent > 0) {
+      html += `<div class="timebar-seg current" style="width:${pCurrent}%">${currentTask ? currentTask.name : ''}</div>`;
+    }
+    // pending
+    if (pPending > 0) {
+      html += `<div class="timebar-seg remaining" style="width:${pPending}%">${pPending > 8 ? '待完成' : ''}</div>`;
+    }
+    // freetime
+    if (pFreetime > 0) {
+      html += `<div class="timebar-seg freetime" style="width:${pFreetime}%">`;
+      if (pFreetime > 10) html += `自由时间`;
+      html += `<span class="timebar-free-sparkles">✨</span></div>`;
+    }
+    // overtime
+    if (pOvertime > 0) {
+      html += `<div class="timebar-seg overtime" style="width:${pOvertime}%">超时</div>`;
+    }
+
+    html += `</div></div>`;
+  }
+
+  // ── Current Task Card ──
+  const currentTask = tasks.find(t => t.status === 'current');
+  const nextTask = tasks.find(t => t.status === 'pending');
+  if (currentTask) {
+    html += `<div class="current-task-card" style="--child-color:${child.color};--child-color-dim:${child.colorDim};--child-color-light:${child.colorLight}">
+      <div class="current-task-arrow">▶</div>
+      <div class="current-task-info">
+        <div class="current-task-label">现在做</div>
+        <div class="current-task-name">${currentTask.icon} ${currentTask.name}</div>
+        <div class="current-task-meta">剩余 ${currentTask.duration} 分钟 · 快做完可以多玩一会儿！</div>
+      </div>
+      <button class="current-task-done-btn" onclick="completeCurrentTask()">✓</button>
+    </div>`;
+  } else if (nextTask && appState === 'active') {
+    html += `<div class="current-task-card waiting">
+      <div class="current-task-arrow">▶</div>
+      <div class="current-task-info">
+        <div class="current-task-label">接下来</div>
+        <div class="current-task-name">${nextTask.icon} ${nextTask.name}</div>
+        <div class="current-task-meta">即将开始</div>
+      </div>
+    </div>`;
+  }
+
+  // ── Task Grid ──
+  if (appState !== 'before') {
+    html += `<div>
+      <div class="task-grid-label">今晚任务</div>
+      <div class="task-grid">`;
+    tasks.forEach((t, i) => {
+      if (t.status === 'freetime') return;
+      let cls = 'task-card';
+      if (t.status === 'done') cls += ' done';
+      else if (t.status === 'current') cls += ' current';
+      else if (appState === 'overtime' && t.status === 'pending') cls += ' urgent';
+      else if (t === nextTask && appState === 'active') cls += ' next-up';
+
+      let statusDot = '';
+      if (t.status === 'current') statusDot = '<div class="task-status-dot"></div>';
+      let check = t.status === 'done' ? '<div class="task-check">✓</div>' : '';
+
+      html += `<div class="${cls}">
+        ${check}
+        <div class="task-icon">${t.icon}</div>
+        <div class="task-name">${t.name}</div>
+        <div class="task-duration">${t.status === 'done' ? '已完成' : '剩余 ' + t.duration + ' 分钟'}</div>
+        ${statusDot}
+      </div>`;
+    });
+    html += `</div></div>`;
+  }
+
+  // ── Free Time ──
+  if (appState !== 'before' && freetimeMins > 0) {
+    html += `<div class="freetime-panel">
+      <div class="freetime-icon">✨</div>
+      <div class="freetime-text">
+        <div class="freetime-label">已获得自由时间</div>
+        <div class="freetime-duration">${minsToHHMM(freetimeMins)}</div>
+        <div class="freetime-hint">继续加油！快速完成更多任务可获得更多可玩时间 ✨</div>
+      </div>
+    </div>`;
+  }
+
+  // ── Overtime ──
+  if (appState === 'overtime') {
+    const remainingTasks = tasks.filter(t => t.status === 'pending');
+    html += `<div class="overtime-panel">
+      <div class="overtime-icon">😟</div>
+      <div class="overtime-text">
+        <div class="overtime-label">已超出计划时间</div>
+        <div class="overtime-info">还剩：${remainingTasks.map(t => t.name).join('、')} · 家长可在后台调整今晚安排</div>
+      </div>
+    </div>`;
+  }
+
+  html += `<div class="spacer"></div>`;
+
+  document.getElementById('app').innerHTML = html;
+}
+
+// ── Helpers ──
+function getRemainingMinutes() {
+  // Simulate: active = 60 min left, overtime = -15 min
+  if (appState === 'before') return WIN_TOTAL;
+  if (appState === 'overtime') return -15;
+  return 60; // active
+}
+
+function getFreetimeMinutes() {
+  if (appState === 'before') return 0;
+  if (appState === 'overtime') return 0;
+  // Simulate freetime based on done tasks
+  const tasks = taskData[currentChildId];
+  const done = tasks.filter(t => t.status === 'done').reduce((s, t) => s + t.duration, 0);
+  return done > 0 ? Math.floor(done * 0.4) : 0;
+}
+
+function switchChild(id) {
+  currentChildId = id;
+  render();
+}
+
+function completeCurrentTask() {
+  const tasks = taskData[currentChildId];
+  const idx = tasks.findIndex(t => t.status === 'current');
+  if (idx === -1) return;
+  tasks[idx].status = 'done';
+  // advance to next pending
+  const next = tasks.find(t => t.status === 'pending');
+  if (next) next.status = 'current';
+  render();
+}
+
+function setState(state) {
+  appState = state;
+  document.querySelectorAll('.debug-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  render();
+}
+
+// ── Init ──
+render();
+</script>
+</body>
+</html>
